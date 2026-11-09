@@ -1,23 +1,43 @@
 name: Update Nasdaq Radar Data
+
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 23 * * 1-5'
+    - cron: '15 23 * * 1-5'
+
 permissions:
   contents: write
+
+concurrency:
+  group: nasdaq-radar-data
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Fetch market data
+      - name: Fetch and validate market data
         run: python scripts/update_data.py
-      - name: Commit latest data
+      - name: Commit generated JSON
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test -s market-data.json
+          python -m json.tool market-data.json > /dev/null
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add market-data.json
-          git diff --cached --quiet || (git commit -m "Update Nasdaq market data" && git push)
+          if ! git diff --cached --quiet; then
+            git commit -m 'data: refresh Nasdaq radar market data'
+            git push origin HEAD:main
+          else
+            echo 'No changes to commit'
+          fi
